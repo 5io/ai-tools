@@ -106,5 +106,3 @@ claude plugin install 5io-dev-workflow@5io-ai-tools
 仓库同时提供 [Codex 市场](.agents/plugins/marketplace.json) 和 [Claude Code 市场](.claude-plugin/marketplace.json)。两者共用 `5io-ai-tools` 市场名与 `5io-dev-workflow` 插件名，指向同一个插件目录。新增同类流程放进现有插件，有独立安装场景的工具可另建包并同步两份市场条目。插件路径相对仓库根目录，Skill 在各自包内保持单一来源。
 
 提交前运行 `node scripts/check-marketplace.mjs` 和 `git diff --check`。发布时同步更新两个宿主的插件版本。增加或调整市场条目时，使用对应客户端验证安装与发现。
-
-方法参考 [Oil 欧呦的 oil-dev-skills](https://github.com/oil-oil/oil-dev-skills)，本仓库的具体流程按跨平台开发场景重新编写。项目使用 [MIT 许可证](LICENSE)。
