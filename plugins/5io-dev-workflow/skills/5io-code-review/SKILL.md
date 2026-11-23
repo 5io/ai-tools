@@ -22,7 +22,7 @@ description: "Independently review a defined Git diff or pull request against a 
 
 ## 先对一遍范围
 
-从适用的项目规则和确认版方案提取允许改动范围、禁改路径、高风险路径及验收条件。按锁定的 Git 基线和待审版本获取变更文件清单，保留新增、删除、重命名和分开的未跟踪文件。进入深审前逐项核对：
+从获批的方案、范围和适用的项目规则提取允许改动范围、禁改路径、高风险路径及验收条件。交接须从审批记录或发起审查的人取得完整提交 SHA 加仓库相对路径，或独立提供的可信快照。单列候选改动中的方案、范围或授权规则变更，按其获批版本执行检查。按锁定的 Git 基线和待审版本获取变更文件清单，保留新增、删除、重命名和分开的未跟踪文件。进入深审前逐项核对：
 
 - 实际变更是否都在允许范围，是否触及禁改或高风险路径。
 - 范围外变动是否有已确认的例外，批准状态不明时标记待确认。
@@ -33,12 +33,16 @@ description: "Independently review a defined Git diff or pull request against a 
 可以用随 Skill 安装的 [范围检查脚本](scripts/check-scope.mjs) 生成变更清单，使用 Node.js 和 Git。从目标仓库运行，脚本路径按 Skill 安装位置替换：
 
 ```sh
-node /path/to/5io-code-review/scripts/check-scope.mjs --mode commits --base BASE --target TARGET --merge-base --scope scope.json
+node /path/to/5io-code-review/scripts/check-scope.mjs --mode commits --base BASE --target TARGET --merge-base --scope-ref APPROVED_COMMIT_SHA --scope docs/scope.json
 ```
 
 对于两个明确快照省略 `--merge-base`。工作区用 `--mode staged`、`--mode unstaged` 或 `--mode worktree`，分别表示暂存区、相对暂存区的未暂存改动、相对基线的最终工作树。需要单独确认两层变更时分别运行。工作区或未暂存模式可显式加 `--include-untracked`。缺少确认范围时仍可运行，结果会标明范围未知。
 
-范围文件使用 `allowed`、`restricted`、`highRisk` 三个路径数组，目录用末尾的 `/` 表示，省略 `allowed` 表示未知。脚本退出码 0 表示未检出越界或禁改命中，1 表示命中，2 表示输入或 Git 错误。高风险路径单独标出。输出用于筛选，已批准的例外、验收编号对应的证据和实际合并决定仍需审查者核对。宿主不能执行脚本时，手工对照同一批输入。
+范围文件使用 `allowed`、`restricted`、`highRisk` 三个路径数组。末尾带 `/` 的规则匹配根路径及其后代。使用独立提供的可信快照时，仅传 `--scope /path/to/approved-scope.json`。未提供 `allowed` 时，允许范围标为未知。JSON 中的 `scopeSource` 记录实际读取的来源。
+
+退出码 `0` 表示未检出越界或禁改命中，`1` 表示命中，`2` 表示检查未完成。脚本禁用 Git fsmonitor。工作树和未暂存模式会用 `unchecked` 列出受 `assume-unchanged` 或 `skip-worktree` 影响而未核对的路径。如果 Git 配置的 `clean` 或 `process` 过滤器可用于跟踪文件，这些模式会拒绝执行工作树 diff，并用 `filteredPaths` 列出相关路径。可改用提交或暂存区模式，并说明未覆盖的工作树改动。子模块引用变化会列出，子模块内部的未提交改动要进入子模块另查。
+
+高风险路径单独标出。获批例外、验收证据和合并决定仍需人工或 Agent 核对。宿主不能执行脚本时，手工对照同一批输入。
 
 ## 按风险走查
 

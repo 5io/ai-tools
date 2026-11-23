@@ -1,25 +1,33 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-function git(directory, args) {
+function git(directory, args, input) {
   try {
-    return execFileSync("git", ["--no-optional-locks", "-C", directory, ...args], {
+    return execFileSync("git", [
+      "--no-optional-locks", "--no-replace-objects", "-c", "core.fsmonitor=false", "-C", directory, ...args,
+    ], {
       encoding: "utf8",
       maxBuffer: 16 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"],
+      input,
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
   } catch (error) {
     throw new Error(error.stderr?.trim() || error.message);
   }
 }
 
+function isRepoPath(path) {
+  return typeof path === "string" && !/[\\:\x00-\x1f]/.test(path) &&
+    path.split("/").every((part) => part && part !== "." && part !== "..");
+}
+
 function readPaths(config, key) {
   const paths = config[key];
   if (paths === undefined) return undefined;
   if (!Array.isArray(paths) || paths.some((path) =>
-    typeof path !== "string" || !path || /[\\:\x00-\x1f]/.test(path) ||
-    path.replace(/\/$/, "").split("/").some((part) => !part || part === "." || part === "..")
+    typeof path !== "string" || !isRepoPath(path.replace(/\/$/, ""))
   )) {
     throw new Error(`${key} must contain repo-relative paths, with a trailing slash for directories`);
   }
@@ -27,7 +35,50 @@ function readPaths(config, key) {
 }
 
 function matches(path, rules = []) {
-  return rules.some((rule) => rule.endsWith("/") ? path.startsWith(rule) : path === rule);
+  return rules.some((rule) => rule.endsWith("/")
+    ? path === rule.slice(0, -1) || path.startsWith(rule)
+    : path === rule);
+}
+
+function readScope(root, file, ref) {
+  if (file === undefined && ref === undefined) return { config: {}, scopeSource: null };
+  if (!file?.trim()) throw new Error("--scope requires a non-empty JSON path");
+
+  if (ref === undefined) {
+    const path = resolve(file);
+    return { config: JSON.parse(readFileSync(path, "utf8")), scopeSource: { kind: "file", path } };
+  }
+
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(ref) || !isRepoPath(file)) {
+    throw new Error("--scope-ref requires a full commit SHA and a repo-relative --scope path");
+  }
+  const commit = ref.toLowerCase();
+  if (git(root, ["cat-file", "-t", commit]).trim() !== "commit") {
+    throw new Error("--scope-ref must identify a commit");
+  }
+  const config = JSON.parse(git(root, ["cat-file", "blob", `${commit}:${file}`]));
+  return { config, scopeSource: { kind: "commit", commit, path: file } };
+}
+
+function worktreeLimits(root) {
+  const tracked = git(root, ["ls-files", "-v", "-z"]).split("\0").filter(Boolean);
+  const unchecked = tracked.filter((line) => /^[a-zS] /.test(line)).map((line) => line.slice(2));
+  const filterCommands = new Map();
+  for (const entry of git(root, ["config", "--null", "--list"]).split("\0")) {
+    const match = /^(filter\.(.+)\.(?:clean|process))\n([\s\S]*)$/.exec(entry);
+    if (match) filterCommands.set(match[1], { name: match[2], command: match[3] });
+  }
+  const filters = new Set([...filterCommands.values()]
+    .filter(({ command }) => command).map(({ name }) => name));
+  if (!filters.size || !tracked.length) return { unchecked, filteredPaths: [] };
+
+  const paths = new Set(tracked.map((line) => line.slice(2)));
+  const fields = git(root, ["check-attr", "-z", "--stdin", "filter"], [...paths].join("\0") + "\0").split("\0");
+  const filteredPaths = [];
+  for (let index = 0; index + 2 < fields.length; index += 3) {
+    if (filters.has(fields[index + 2])) filteredPaths.push(fields[index]);
+  }
+  return { unchecked, filteredPaths };
 }
 
 function readChanges(output) {
@@ -51,6 +102,7 @@ function main() {
     options: {
       repo: { type: "string", default: "." },
       scope: { type: "string" },
+      "scope-ref": { type: "string" },
       mode: { type: "string" },
       base: { type: "string" },
       target: { type: "string" },
@@ -70,7 +122,8 @@ function main() {
     throw new Error("--include-untracked requires unstaged or worktree mode");
   }
 
-  const config = scope ? JSON.parse(readFileSync(scope, "utf8")) : {};
+  const root = git(repo, ["rev-parse", "--show-toplevel"]).replace(/\r?\n$/, "");
+  const { config, scopeSource } = readScope(root, scope, values["scope-ref"]);
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     throw new Error("Scope JSON must be an object");
   }
@@ -82,21 +135,22 @@ function main() {
   const allowed = readPaths(config, "allowed");
   const restricted = readPaths(config, "restricted");
   const highRisk = readPaths(config, "highRisk");
-  const root = git(repo, ["rev-parse", "--show-toplevel"]).replace(/\r?\n$/, "");
   const resolveCommit = (ref) => git(root, ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`]).trim();
   const baseCommit = mode === "unstaged" ? null : resolveCommit(base ?? "HEAD");
   const targetCommit = mode === "commits" ? resolveCommit(target) : null;
   const diffBase = values["merge-base"] ? git(root, ["merge-base", baseCommit, targetCommit]).trim() : baseCommit;
 
-  const args = [
-    "diff", "--no-ext-diff", "--no-textconv", "--no-relative", "--ignore-submodules=none",
-    "--name-status", "-z", "-M",
-  ];
+  const usesWorktree = mode === "unstaged" || mode === "worktree";
+  const { unchecked, filteredPaths } = usesWorktree
+    ? worktreeLimits(root) : { unchecked: [], filteredPaths: [] };
+  const args = ["diff", "--no-ext-diff", "--no-textconv", "--no-relative",
+    usesWorktree ? "--ignore-submodules=dirty" : "--ignore-submodules=none", "--name-status", "-z", "-M"];
   if (mode === "staged") args.push("--cached");
   if (diffBase) args.push(diffBase);
   if (targetCommit) args.push(targetCommit);
-  const changes = readChanges(git(root, [...args, "--"]));
-  if (values["include-untracked"]) {
+  const changes = filteredPaths.length ? [] : readChanges(git(root, [...args, "--"]));
+  const includesUntracked = Boolean(values["include-untracked"]) && !filteredPaths.length;
+  if (includesUntracked) {
     for (const path of git(root, ["ls-files", "-z", "--others", "--exclude-standard"]).split("\0").filter(Boolean)) {
       changes.push({ status: "?", path });
     }
@@ -113,12 +167,20 @@ function main() {
     base: baseCommit,
     comparedFrom: diffBase ?? "index",
     target: targetCommit ?? (mode === "staged" ? "index" : "worktree"),
-    includesUntracked: Boolean(values["include-untracked"]),
+    includesUntracked,
     hasAllowedScope: allowed !== undefined,
+    scopeSource,
+    unchecked,
+    filteredPaths,
     changes,
   }, null, 2));
 
-  if (changes.some((change) => change.outside?.length || change.restricted.length)) process.exitCode = 1;
+  if (unchecked.length || filteredPaths.length) {
+    console.error("Worktree scan incomplete: see unchecked index paths or configured filter paths. Use staged or commits for a snapshot.");
+    process.exitCode = 2;
+  } else if (changes.some((change) => change.outside?.length || change.restricted.length)) {
+    process.exitCode = 1;
+  }
 }
 
 try {

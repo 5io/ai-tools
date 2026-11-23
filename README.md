@@ -11,17 +11,19 @@
 
 ## 审查前，先对一遍范围
 
-先给审查会话三个输入：确认版方案或验收条件、Git 基线、待审提交或工作区。审查者先列实际变更文件，再逐一对照允许范围、禁改和高风险路径，并标出没有对应 diff 或测试证据的验收项。
+交接时提供已批准的方案和范围、Git 基线以及待审提交或工作区。从审批记录或发起审查的人取得获批内容的完整提交 SHA 和仓库相对路径，也可以直接提供从审查对象以外取得的可信快照。将候选改动中的方案或范围变更单独列为审查项。审查者逐一对照实际变更与允许范围、禁改和高风险路径，并标出缺少证据的验收项。
 
 例如，方案允许改报表实现及其测试，diff 却还修改了权限配置。先把权限配置记为范围外变更，核对是否有已确认的范围变更，然后再审业务逻辑。授权范围不清时，继续检查明确的部分，并报告需要确认的路径。可直接使用 [独立 diff 审查提示词](prompts/独立-diff-审查.md)。
 
 有 Git 和 Node.js 时，可以把 [范围 JSON 模板](templates/审查范围.json) 填好，与确认版方案放在一起。下面的命令从本仓库运行，检查目标项目中一段提交的范围：
 
 ```sh
-node plugins/5io-dev-workflow/skills/5io-code-review/scripts/check-scope.mjs --repo /path/to/project --mode commits --base BASE_BRANCH --target FEATURE_COMMIT --merge-base --scope /path/to/scope.json
+node plugins/5io-dev-workflow/skills/5io-code-review/scripts/check-scope.mjs --repo /path/to/project --mode commits --base BASE_BRANCH --target FEATURE_COMMIT --merge-base --scope-ref APPROVED_COMMIT_SHA --scope docs/scope.json
 ```
 
-`--merge-base` 对应分支或 PR 审查。明确比较两个提交快照时省略它。尚未提交时可选择 `staged`、`unstaged` 或 `worktree`。路径以仓库根目录为准，目录末尾加 `/`。JSON 会列出变更、重命名两侧和命中的规则；退出码 `1` 表示有越界或禁改命中，`2` 表示输入或 Git 错误。高风险与范围未知会单独标明。详见 [审查 Skill](plugins/5io-dev-workflow/skills/5io-code-review/SKILL.md)。
+使用独立提供的可信快照时，仅传 `--scope /path/to/approved-scope.json`。省略 `--scope` 表示允许范围未确认，空参数会报错。规则路径相对仓库根目录，以 `/` 结尾的规则匹配目录根路径及其后代。
+
+`--merge-base` 对应分支或 PR 审查。明确比较两个提交快照时省略它。尚未提交时可选择 `staged`、`unstaged` 或 `worktree`。退出码 `0` 表示未检出越界或禁改命中，`1` 表示命中，`2` 表示检查未完成。工作树模式检测到 Git 索引隐藏路径或可能执行外部过滤器时，按诊断列出核查缺口，必要时切换到提交或暂存区快照。详见 [审查 Skill](plugins/5io-dev-workflow/skills/5io-code-review/SKILL.md)。
 
 ## 六个 Skill
 
@@ -45,7 +47,7 @@ node plugins/5io-dev-workflow/skills/5io-code-review/scripts/check-scope.mjs --r
 
 例如，「用 `5io-plan` 先为批量重试写方案。需要保留失败项，先讲清部分成功后的界面状态及验收，等我确认再改。」也可直接复制 [人话方案](prompts/人话方案.md)、[里程碑模板](templates/里程碑方案.md) 或 [技术选型与性能排查提示词](prompts/补充工作流.md)。
 
-跨会话时，方案、交接单和审查都引用同一版方案与范围文件。实现者按相同的验收编号报告实际结果，并优先运行相关快测。独立审查先查范围，再按编号核对证据。发布或合并前按目标项目的既有规则运行合并检查。
+跨会话时，先记录方案和范围的获批来源，再交接实现和审查。实现者按验收编号报告实际结果，并优先运行相关快测。独立审查确认候选改动后，按编号核对证据。发布或合并前按目标项目的既有规则运行合并检查。
 
 ### 安装
 
@@ -115,6 +117,6 @@ claude plugin install 5io-dev-workflow@5io-ai-tools
 
 仓库同时提供 [Codex 市场](.agents/plugins/marketplace.json) 和 [Claude Code 市场](.claude-plugin/marketplace.json)。两者共用 `5io-ai-tools` 市场名与 `5io-dev-workflow` 插件名，指向同一个插件目录。新增同类流程放进现有插件，有独立安装场景的工具可另建包并同步两份市场条目。插件路径相对仓库根目录，Skill 在各自包内保持单一来源。
 
-提交前运行 `node scripts/check-marketplace.mjs` 和 `git diff --check`。发布时同步更新两个宿主的插件版本。增加或调整市场条目时，使用对应客户端验证安装与发现。
+提交前运行 `node scripts/check-marketplace.mjs`、`node --test tests/workflows.test.mjs` 和 `git diff --check`。GitHub Actions 会运行市场校验和工作流测试。发布时同步更新两个宿主的插件版本。增加或调整市场条目时，使用对应客户端验证安装与发现。
 
 运行 `node --test tests/workflows.test.mjs` 可复跑范围检查和报表零值漏计样例。测试用临时 Git 仓库验证暂存、未暂存、未跟踪和越界重命名，并跑通确认范围、交接、失败复现、快测、独立范围审查及合并检查。样例验证 Git 和脚本的行为，可用同一场景另行试跑宿主的 Skill 调用。
