@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "5io-dev-workflow",
+  "version": "0.1.0",
+  "description": "Reusable workflows for repository exploration, planning, delegation, diff review, debugging, and maintenance.",
+  "repository": "https://github.com/5io/ai-tools",
+  "license": "MIT",
+  "author": {
+    "name": "5io"
+  }
+}

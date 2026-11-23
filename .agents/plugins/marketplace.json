@@ -1,0 +1,15 @@
+{
+  "name": "5io-ai-tools",
+  "interface": {
+    "displayName": "5io AI Tools"
+  },
+  "plugins": [
+    {
+      "name": "5io-dev-workflow",
+      "source": {
+        "source": "local",
+        "path": "./plugins/5io-dev-workflow"
+      }
+    }
+  ]
+}
