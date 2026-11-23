@@ -1,0 +1,12 @@
+{
+  "allowed": [
+    "src/example/",
+    "tests/example.test.mjs"
+  ],
+  "restricted": [
+    "vendor/"
+  ],
+  "highRisk": [
+    "src/example/config.mjs"
+  ]
+}

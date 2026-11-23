@@ -30,6 +30,16 @@ description: "Independently review a defined Git diff or pull request against a 
 
 最终在详细发现之前给出范围摘要，包含基线、待审版本、范围异常和待确认项。只在项目资料足以支持时判定越界。
 
+可以用随 Skill 安装的 [范围检查脚本](scripts/check-scope.mjs) 生成变更清单，使用 Node.js 和 Git。从目标仓库运行，脚本路径按 Skill 安装位置替换：
+
+```sh
+node /path/to/5io-code-review/scripts/check-scope.mjs --mode commits --base BASE --target TARGET --merge-base --scope scope.json
+```
+
+对于两个明确快照省略 `--merge-base`。工作区用 `--mode staged`、`--mode unstaged` 或 `--mode worktree`，分别表示暂存区、相对暂存区的未暂存改动、相对基线的最终工作树。需要单独确认两层变更时分别运行。工作区或未暂存模式可显式加 `--include-untracked`。缺少确认范围时仍可运行，结果会标明范围未知。
+
+范围文件使用 `allowed`、`restricted`、`highRisk` 三个路径数组，目录用末尾的 `/` 表示，省略 `allowed` 表示未知。脚本退出码 0 表示未检出越界或禁改命中，1 表示命中，2 表示输入或 Git 错误。高风险路径单独标出。输出用于筛选，已批准的例外、验收编号对应的证据和实际合并决定仍需审查者核对。宿主不能执行脚本时，手工对照同一批输入。
+
 ## 按风险走查
 
 - 局部改动：检查入口、默认状态、直接调用方和能发现回归的测试。
