@@ -1,0 +1,13 @@
+{
+  "name": "5io-ai-tools",
+  "description": "Cross-platform Agent Skills for software development.",
+  "owner": {
+    "name": "5io"
+  },
+  "plugins": [
+    {
+      "name": "5io-dev-workflow",
+      "source": "./plugins/5io-dev-workflow"
+    }
+  ]
+}

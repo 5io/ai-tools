@@ -7,8 +7,16 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const pluginDirectory = resolve(root, "plugins");
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const marketplace = readJson(resolve(root, ".agents/plugins/marketplace.json"));
+const claudeMarketplace = readJson(resolve(root, ".claude-plugin/marketplace.json"));
 assert.match(marketplace.name, /^5io-[a-z0-9-]+$/);
 assert.ok(Array.isArray(marketplace.plugins) && marketplace.plugins.length > 0);
+assert.equal(claudeMarketplace.name, marketplace.name);
+assert.ok(claudeMarketplace.owner?.name?.trim(), "Missing Claude marketplace owner");
+assert.deepEqual(
+  claudeMarketplace.plugins.map(({ name, source }) => [name, source]).sort(),
+  marketplace.plugins.map(({ name, source }) => [name, source.path]).sort(),
+  "Marketplace plugin IDs or source paths differ",
+);
 
 const pluginNames = new Set();
 const skillNames = new Set();
@@ -25,6 +33,10 @@ for (const { name, source } of marketplace.plugins) {
   assert.equal(manifest.name, name);
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.ok(manifest.description?.trim(), `Missing description: ${name}`);
+  const claudeManifest = readJson(resolve(plugin, ".claude-plugin/plugin.json"));
+  for (const field of ["name", "version", "description"]) {
+    assert.equal(claudeManifest[field], manifest[field], `Claude plugin ${field} differs: ${name}`);
+  }
 
   const skills = readdirSync(resolve(plugin, "skills"), { withFileTypes: true })
     .filter((entry) => entry.isDirectory());
