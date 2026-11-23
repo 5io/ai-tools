@@ -1,6 +1,6 @@
 {
   "name": "5io-dev-workflow",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Reusable workflows for repository exploration, planning, delegation, diff review, debugging, and maintenance.",
   "author": {
     "name": "5io"
